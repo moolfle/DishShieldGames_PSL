@@ -1,1 +1,2 @@
-streamlit
+streamlit>=1.56
+st-copy>=2.0.0
