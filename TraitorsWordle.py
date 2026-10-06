@@ -1,134 +1,213 @@
 import hashlib
 import time
-from collections import Counter
-from datetime import datetime, date
-from zoneinfo import ZoneInfo
+from datetime import date
+from pathlib import Path
 
 import streamlit as st
-from st_copy import copy_button
 
 
-# --------------------------------------------------
-# APP SETTINGS
-# --------------------------------------------------
+# -----------------------------
+# PAGE SETUP
+# -----------------------------
 
 st.set_page_config(
-    page_title="Port Sunlight Wordle",
+    page_title="Port Sunlight Traitors Wordle",
     page_icon="🟩",
     layout="centered"
 )
 
-MAX_GUESSES = 6
-WORD_LENGTH = 5
 
-# Add as many five-letter answers as you like.
-# Everyone receives the same answer on the same date.
+# -----------------------------
+# WORD SETTINGS
+# -----------------------------
+
 WORDS = [
     "FAIRY",
     "RINSE",
     "CLEAN",
     "SCRUB",
     "DROPS",
-    "SHINE",
     "PLATE",
     "GLASS",
-    "BRUSH",
-    "FOAMY",
-    "WATER",
-    "POWER",
-    "FRESH",
-    "SUDSY",
-    "SPARK",
-]
+    "SINKS",
+    "RACKS",
+    "SHINE",
+    "SOAKS",
+    "RINSE",
+    "SOILS",
+    "STAIN",
+    "SPOTS",
+    "SHINE",
+    "DROPS",
+    "CYCLE",
+    "STEAM",
+    "CLEAR",
+    ]
 
-UK_TIMEZONE = ZoneInfo("Europe/London")
-
-
-# --------------------------------------------------
-# DAILY PUZZLE
-# --------------------------------------------------
-
-def get_today():
-    return datetime.now(UK_TIMEZONE).date()
+MAX_GUESSES = 6
 
 
-def get_daily_word(puzzle_date):
-    """
-    Selects one consistent word from the list for a given date.
-    Unlike Python's built-in hash(), SHA-256 gives a stable result.
-    """
-    date_text = puzzle_date.isoformat()
-    digest = hashlib.sha256(date_text.encode("utf-8")).hexdigest()
-    word_index = int(digest, 16) % len(WORDS)
-    return WORDS[word_index]
+# Find valid_words.txt in the same folder as this Python file
+word_file = Path(__file__).parent / "valid_words.txt"
+
+with open(word_file, "r", encoding="utf-8") as f:
+    VALID_WORDS = {
+        line.strip().upper()
+        for line in f
+        if len(line.strip()) == 5
+        and line.strip().isalpha()
+    }
+
+# Make sure possible answers are always accepted
+VALID_WORDS.update(WORDS)
 
 
-def get_puzzle_number(puzzle_date):
-    """
-    Puzzle numbering begins on 6 October 2026.
-    """
+# -----------------------------
+# GAME FUNCTIONS
+# -----------------------------
+
+def get_daily_word():
+
+    today = date.today().isoformat()
+
+    digest = hashlib.sha256(
+        today.encode("utf-8")
+    ).hexdigest()
+
+    index = int(digest, 16) % len(WORDS)
+
+    return WORDS[index]
+
+
+def get_puzzle_number():
+
     launch_date = date(2026, 10, 6)
-    return (puzzle_date - launch_date).days + 1
+
+    return (date.today() - launch_date).days + 1
 
 
-# --------------------------------------------------
-# WORDLE SCORING
-# --------------------------------------------------
 def score_guess(guess, answer):
-    """
-    G = correct letter in the correct position
-    Y = correct letter in the wrong position
-    B = letter is not present
 
-    This also handles repeated letters correctly.
-    """
-    result = ["B"] * WORD_LENGTH
-    remaining_letters = Counter()
+    result = ["absent"] * 5
+    remaining = []
 
-    # First pass: mark letters in the correct position
-    for index in range(WORD_LENGTH):
-        if guess[index] == answer[index\]:
-            result[index] = "G"
+    # Pass 1: correct letters
+    for i in range(5):
+
+        if guess[i] == answer[i]:
+            result[i] = "correct"
         else:
-            remaining_letters[answer[index]] += 1
+            remaining.append(answer[i])
 
-    # Second pass: mark correct letters in the wrong position
-    for index in range(WORD_LENGTH):
-        if result[index] == "G":
+    # Pass 2: present letters
+    for i in range(5):
+
+        if result[i] == "correct":
             continue
 
-        letter = guess[index]
-
-        if remaining_letters[letter] > 0:
-            result[index] = "Y"
-            remaining_letters[letter] -= 1
+        if guess[i] in remaining:
+            result[i] = "present"
+            remaining.remove(guess[i])
 
     return result
 
-# --------------------------------------------------
+def generate_share_text():
+
+    output = []
+
+    output.append(
+        f"Port Sunlight Wordle #{get_puzzle_number()}"
+    )
+
+    output.append("")
+
+    for guess, score in st.session_state.guesses:
+
+        row = ""
+
+        for s in score:
+
+            if s == "correct":
+                row += "🟩"
+
+            elif s == "present":
+                row += "🟨"
+
+            else:
+                row += "⬜"
+
+        output.append(row)
+
+    output.append("")
+
+    output.append(
+        f"{len(st.session_state.guesses)}/{MAX_GUESSES}"
+    )
+
+    if st.session_state.finish_time is not None:
+
+        elapsed = int(
+            st.session_state.finish_time
+            - st.session_state.start_time
+        )
+
+        mins = elapsed // 60
+        secs = elapsed % 60
+
+        output.append(
+            f"⏱️ {mins:02d}:{secs:02d}"
+        )
+
+    return "\n".join(output)
+
+def create_board():
+
+    board_html = '<div class="wordle-board">'
+
+    for row in range(MAX_GUESSES):
+
+        board_html += '<div class="wordle-row">'
+
+        if row < len(st.session_state.guesses):
+
+            guess, score = st.session_state.guesses[row]
+
+            for letter, result in zip(guess, score):
+
+                board_html += (
+                    f'<div class="wordle-tile {result}">'
+                    f'{letter}'
+                    f'</div>'
+                )
+
+        else:
+
+            for _ in range(5):
+                board_html += (
+                    '<div class="wordle-tile empty">'
+                    '&nbsp;'
+                    '</div>'
+                )
+
+        board_html += "</div>"
+
+    board_html += "</div>"
+
+    return board_html
+
+
+# -----------------------------
 # SESSION STATE
-# --------------------------------------------------
-
-today = get_today()
-daily_answer = get_daily_word(today)
-puzzle_number = get_puzzle_number(today)
-
-if "puzzle_date" not in st.session_state:
-    st.session_state.puzzle_date = today
-
-# Reset automatically when a new daily puzzle begins
-if st.session_state.puzzle_date != today:
-    st.session_state.clear()
-    st.session_state.puzzle_date = today
+# -----------------------------
 
 if "answer" not in st.session_state:
-    st.session_state.answer = daily_answer
+    st.session_state.answer = get_daily_word()
 
 if "guesses" not in st.session_state:
     st.session_state.guesses = []
 
-if "scores" not in st.session_state:
-    st.session_state.scores = []
+if "game_over" not in st.session_state:
+    st.session_state.game_over = False
 
 if "start_time" not in st.session_state:
     st.session_state.start_time = None
@@ -136,250 +215,166 @@ if "start_time" not in st.session_state:
 if "finish_time" not in st.session_state:
     st.session_state.finish_time = None
 
-if "game_over" not in st.session_state:
-    st.session_state.game_over = False
 
-if "won" not in st.session_state:
-    st.session_state.won = False
+# -----------------------------
+# -------------------------
 
+st.markdown(
+    """
+    <style>
 
-# --------------------------------------------------
-# DISPLAY FUNCTIONS
-# --------------------------------------------------
-
-def tile_html(letter, status):
-    colours = {
-        "G": "#538d4e",
-        "Y": "#b59f3b",
-        "B": "#3a3a3c",
-        "E": "#ffffff",
+    .block-container {
+        max-width: 520px;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
 
-    borders = {
-        "G": "#538d4e",
-        "Y": "#b59f3b",
-        "B": "#3a3a3c",
-        "E": "#878a8c",
+    h1 {
+        text-align: center;
+        margin-top: 0;
+        margin-bottom: 0.25rem;
     }
 
-    text_colour = "#ffffff" if status != "E" else "#000000"
+    .game-info {
+        text-align: center;
+        margin-bottom: 0.6rem;
+        color: #555555;
+    }
 
-    return f"""
-    <div style="
-        width: 56px;
-        height: 56px;
+    .wordle-board {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        margin: 8px auto 12px auto;
+    }
+
+    .wordle-row {
+        display: flex;
+        gap: 5px;
+    }
+
+    .wordle-tile {
+        width: 46px;
+        height: 46px;
         display: flex;
         align-items: center;
         justify-content: center;
-        background-color: {colours[status]};
-        border: 2px solid {borders[status]};
-        color: {text_colour};
-        font-size: 28px;
-        font-weight: 700;
-        font-family: Arial, sans-serif;
-        box-sizing: border-box;
-    ">
-        {letter}
-    </div>
-    """
-
-
-def display_board():
-    for row_number in range(MAX_GUESSES):
-        columns = st.columns(
-            [1, 1, 1, 1, 1],
-            gap="small"
-        )
-
-        if row_number < len(st.session_state.guesses):
-            guess = st.session_state.guesses[row_number]
-            score = st.session_state.scores[row_number]
-
-            for column, letter, status in zip(columns, guess, score):
-                with column:
-                    st.markdown(
-                        tile_html(letter, status),
-                        unsafe_allow_html=True
-                    )
-        else:
-            for column in columns:
-                with column:
-                    st.markdown(
-                        tile_html("", "E"),
-                        unsafe_allow_html=True
-                    )
-
-
-def get_keyboard_status():
-    """
-    Determine the strongest known status for every letter.
-    Green overrides yellow, and yellow overrides grey.
-    """
-    status_priority = {
-        "B": 1,
-        "Y": 2,
-        "G": 3
-    }
-
-    keyboard_status = {}
-
-    for guess, score in zip(
-        st.session_state.guesses,
-        st.session_state.scores
-    ):
-        for letter, status in zip(guess, score):
-            old_status = keyboard_status.get(letter)
-
-            if old_status is None:
-                keyboard_status[letter] = status
-            elif status_priority[status] > status_prioritykeyboard_status[letter] = status
-
-    return keyboard_status
-
-
-def keyboard_key_html(letter, status):
-    colours = {
-        "G": "#538d4e",
-        "Y": "#b59f3b",
-        "B": "#3a3a3c",
-        "U": "#d3d6da",
-    }
-
-    text_colour = "#ffffff" if status in ["G", "Y", "B"] else "#000000"
-
-    return f"""
-    <span style="
-        display: inline-block;
-        min-width: 32px;
-        margin: 3px 1px;
-        padding: 9px 4px;
         border-radius: 4px;
-        background-color: {colours[status]};
-        color: {text_colour};
-        text-align: center;
-        font-family: Arial, sans-serif;
-        font-size: 15px;
+        font-size: 24px;
         font-weight: 700;
-    ">
-        {letter}
-    </span>
-    """
+        color: white;
+        box-sizing: border-box;
+    }
+
+    .wordle-tile.empty {
+        background-color: white;
+        border: 2px solid #d3d6da;
+        color: #333333;
+    }
+
+    .wordle-tile.correct {
+        background-color: #6aaa64;
+        border: 2px solid #6aaa64;
+    }
+
+    .wordle-tile.present {
+        background-color: #c9b458;
+        border: 2px solid #c9b458;
+    }
+
+    .wordle-tile.absent {
+        background-color: #787c7e;
+        border: 2px solid #787c7e;
+    }
+
+    div[data-testid="stTextInput"] {
+        max-width: 300px;
+        margin: auto;
+    }
+
+    div[data-testid="stFormSubmitButton"] {
+        text-align: center;
+    }
+
+    div[data-testid="stFormSubmitButton"] button {
+        width: 180px;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
-def display_keyboard():
-    keyboard_status = get_keyboard_status()
+# -----------------------------
+# TITLE AND BOARD
+# -----------------------------
 
-    rows = [
-        "QWERTYUIOP",
-        "ASDFGHJKL",
-        "ZXCVBNM"
-    ]
+st.title(
+    f"Port Sunlight Wordle #{get_puzzle_number()}"
+)
 
-    for row in rows:
-        row_html = '<div style="text-align: center;">'
+guesses_remaining = (
+    MAX_GUESSES
+    - len(st.session_state.guesses)
+)
 
-        for letter in row:
-            status = keyboard_status.get(letter, "U")
-            row_html += keyboard_key_html(letter, status)
+st.markdown(
+    f"""
+    <div class="game-info">
+        Guess the five-letter word the fastest to win a shield ·
+        {guesses_remaining} guesses remaining
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-        row_html += "</div>"
+st.markdown(
+    create_board(),
+    unsafe_allow_html=True
+)
 
-        st.markdown(
-            row_html,
-            unsafe_allow_html=True
+
+# -----------------------------
+# LIVE TIMER
+# -----------------------------
+
+@st.fragment(run_every=1)
+def show_timer():
+
+    if st.session_state.start_time is None:
+        elapsed = 0
+
+    elif st.session_state.finish_time is not None:
+        elapsed = (
+            st.session_state.finish_time
+            - st.session_state.start_time
         )
 
+    else:
+        elapsed = (
+            time.time()
+            - st.session_state.start_time
+        )
 
-def format_elapsed_time(seconds):
-    total_seconds = int(seconds)
-    minutes = total_seconds // 60
-    remaining_seconds = total_seconds % 60
+    minutes = int(elapsed) // 60
+    seconds = int(elapsed) % 60
 
-    return f"{minutes}:{remaining_seconds:02d}"
-
-
-def get_elapsed_seconds():
-    if st.session_state.start_time is None:
-        return 0
-
-    end_time = (
-        st.session_state.finish_time
-        if st.session_state.finish_time is not None
-        else time.time()
+    st.markdown(
+        f"<p style='text-align:center;'>"
+        f"⏱️ {minutes:02d}:{seconds:02d}"
+        f"</p>",
+        unsafe_allow_html=True
     )
 
-    return end_time - st.session_state.start_time
+
+show_timer()
 
 
-def build_share_text():
-    if st.session_state.won:
-        result_text = (
-            f"{len(st.session_state.guesses)}/{MAX_GUESSES}"
-        )
-    else:
-        result_text = f"X/{MAX_GUESSES}"
-
-    elapsed_text = format_elapsed_time(get_elapsed_seconds())
-
-    lines = [
-        f"Port Sunlight Wordle #{puzzle_number}",
-        f"{result_text} ⏱️ {elapsed_text}",
-        ""
-    ]
-
-    emoji_map = {
-        "G": "🟩",
-        "Y": "🟨",
-        "B": "⬜"
-    }
-
-    for score in st.session_state.scores:
-        lines.append(
-            "".join(emoji_map[status] for status in score)
-        )
-
-    return "\n".join(lines)
-
-
-# --------------------------------------------------
-# GAME HEADER
-# --------------------------------------------------
-
-st.title("Port Sunlight Wordle")
-st.caption(
-    f"Daily puzzle #{puzzle_number} • "
-    f"{today.strftime('%d %B %Y')}"
-)
-
-st.write(
-    "Guess the five-letter word in six attempts. "
-    "The timer starts after your first valid guess."
-)
-
-
-# --------------------------------------------------
-# PROGRESS
-# --------------------------------------------------
-
-guesses_used = len(st.session_state.guesses)
-progress_value = guesses_used / MAX_GUESSES
-
-st.progress(
-    progress_value,
-    text=f"Guesses used: {guesses_used} of {MAX_GUESSES}"
-)
-
-
-# --------------------------------------------------
-# BOARD
-# --------------------------------------------------
-
-display_board()
-
-
-# --------------------------------------------------
-# GUESS ENTRY
-# --------------------------------------------------
+# -----------------------------
+# GUESS FORM
+# -----------------------------
 
 if not st.session_state.game_over:
 
@@ -387,104 +382,96 @@ if not st.session_state.game_over:
         key="guess_form",
         clear_on_submit=True
     ):
+
         guess = st.text_input(
-            "Enter your guess",
-            max_chars=WORD_LENGTH,
-            placeholder="Five-letter word"
-        ).upper().strip()
+            "Enter a five-letter word",
+            max_chars=5,
+            label_visibility="collapsed",
+            placeholder="Type your guess"
+        ).strip().upper()
 
         submitted = st.form_submit_button(
             "Submit guess",
-            type="primary",
-            use_container_width=True
+            use_container_width=False
         )
 
     if submitted:
 
-        if len(guess) != WORD_LENGTH:
-            st.error("Your guess must contain exactly five letters.")
+        if len(guess) != 5:
+            st.error("Your guess must be exactly five letters.")
 
         elif not guess.isalpha():
             st.error("Please use letters only.")
 
+        elif guess not in VALID_WORDS:
+            st.error("That word is not in the word list.")
+
         else:
-            # Start the timer on the first valid guess
+
             if st.session_state.start_time is None:
                 st.session_state.start_time = time.time()
 
-            score = score_guess(
+            result = score_guess(
                 guess,
                 st.session_state.answer
             )
 
-            st.session_state.guesses.append(guess)
-            st.session_state.scores.append(score)
+            st.session_state.guesses.append(
+                (guess, result)
+            )
 
             if guess == st.session_state.answer:
-                st.session_state.won = True
-                st.session_state.game_over = True
-                st.session_state.finish_time = time.time()
 
-            elif len(st.session_state.guesses) >= MAX_GUESSES:
-                st.session_state.won = False
-                st.session_state.game_over = True
                 st.session_state.finish_time = time.time()
+                st.session_state.game_over = True
+
+            elif (
+                len(st.session_state.guesses)
+                >= MAX_GUESSES
+            ):
+
+                st.session_state.finish_time = time.time()
+                st.session_state.game_over = True
 
             st.rerun()
 
 
-# --------------------------------------------------
-# KEYBOARD
-# --------------------------------------------------
-
-st.subheader("Keyboard")
-display_keyboard()
-
-
-# --------------------------------------------------
-# TIMER
-# --------------------------------------------------
-
-if st.session_state.start_time is None:
-    st.info("The timer will begin when you submit your first valid guess.")
-else:
-    elapsed_time = format_elapsed_time(get_elapsed_seconds())
-    st.metric("Time since first guess", elapsed_time)
-
-
-# --------------------------------------------------
-# END-OF-GAME RESULT
-# --------------------------------------------------
+# -----------------------------
+# FINAL RESULT
+# -----------------------------
 
 if st.session_state.game_over:
 
-    elapsed_time = format_elapsed_time(get_elapsed_seconds())
+    if (
+        st.session_state.guesses[-1][0]
+        == st.session_state.answer
+    ):
 
-    if st.session_state.won:
         st.success(
-            f"You solved it in "
-            f"{len(st.session_state.guesses)} guesses "
-            f"and {elapsed_time}."
+            f"You got it in "
+            f"{len(st.session_state.guesses)} guesses!"
         )
+
     else:
+
         st.error(
             f"Out of guesses. The answer was "
             f"{st.session_state.answer}."
         )
 
-    st.subheader("Share your result")
-
-    share_text = build_share_text()
-
-    st.code(
-        share_text,
-        language=None
+    st.info(
+        "You have completed today's puzzle. "
+        "Come back tomorrow for the next word."
     )
+share_text = generate_share_text()
 
-    copy_button(
-        share_text,
-        tooltip="Copy result",
-        copied_label="Copied!",
-        icon="st",
-        key="copy_result"
-    )
+st.code(
+    share_text,
+    language=None
+)
+
+st.download_button(
+    "Download Result",
+    share_text,
+    "PortSunlightWordle.txt"
+)
