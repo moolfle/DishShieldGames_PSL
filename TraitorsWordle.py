@@ -74,26 +74,25 @@ def get_puzzle_number(puzzle_date):
 # --------------------------------------------------
 # WORDLE SCORING
 # --------------------------------------------------
-
 def score_guess(guess, answer):
     """
-    Returns:
-    G = correct letter and position
-    Y = letter exists in another position
+    G = correct letter in the correct position
+    Y = correct letter in the wrong position
     B = letter is not present
 
-    This handles repeated letters correctly.
+    This also handles repeated letters correctly.
     """
     result = ["B"] * WORD_LENGTH
     remaining_letters = Counter()
 
-    # First pass: identify green letters
+    # First pass: mark letters in the correct position
     for index in range(WORD_LENGTH):
-        if guess[index] == answerresult[index] = "G"
+        if guess[index] == answer[index\]:
+            result[index] = "G"
         else:
             remaining_letters[answer[index]] += 1
 
-    # Second pass: identify yellow letters
+    # Second pass: mark correct letters in the wrong position
     for index in range(WORD_LENGTH):
         if result[index] == "G":
             continue
@@ -105,7 +104,6 @@ def score_guess(guess, answer):
             remaining_letters[letter] -= 1
 
     return result
-
 
 # --------------------------------------------------
 # SESSION STATE
